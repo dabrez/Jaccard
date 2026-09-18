@@ -53,12 +53,19 @@ async def close_issue(repo: str, issue_number: int):
         r.raise_for_status()
 
 
-async def fetch_issues(repo: str, state: str = "open",
-                       per_page: int = 100) -> list[dict]:
-    """Fetch all issues for a repo (paginated). Excludes pull requests."""
-    issues = []
+async def fetch_issues(repo: str, state: str = "open", per_page: int = 100,
+                       limit: int | None = None) -> list[dict]:
+    """
+    Fetch a repo's issues (paginated), excluding pull requests.
+
+    The /issues endpoint returns PRs mixed in, and on PR-heavy repos they
+    dominate: microsoft/autogen returns 90 PRs per 100 items. Passing a limit
+    stops paging as soon as that many real issues are collected, instead of
+    walking every page of PRs first.
+    """
+    issues: list[dict] = []
     page = 1
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
             url = f"{GITHUB_API}/repos/{repo}/issues"
             r = await client.get(
@@ -70,8 +77,9 @@ async def fetch_issues(repo: str, state: str = "open",
             batch = r.json()
             if not batch:
                 break
-            # GitHub returns PRs in the issues endpoint — filter them out
             issues.extend(i for i in batch if "pull_request" not in i)
+            if limit is not None and len(issues) >= limit:
+                return issues[:limit]
             if len(batch) < per_page:
                 break
             page += 1

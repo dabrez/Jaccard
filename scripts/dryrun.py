@@ -184,9 +184,7 @@ async def main(repo: str, limit: int | None, fresh: bool,
     init_db()
 
     print(f"Fetching open issues for {repo}...")
-    issues = await fetch_issues(repo, state="open")
-    if limit:
-        issues = issues[:limit]
+    issues = await fetch_issues(repo, state="open", limit=limit)
     print(f"  {len(issues)} open issues")
 
     if not issues:
