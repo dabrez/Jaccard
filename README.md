@@ -57,8 +57,40 @@ similarity scores recorded, or the `/duplicate` graph fed automatically.
 
 ```bash
 python -m venv venv && venv/bin/pip install -r requirements.txt
-cp .env.example .env    # add OPENAI_API_KEY and GITHUB_TOKEN
+cp .env.example .env
 ```
+
+## Embedding provider
+
+Either OpenAI's hosted API or a local Ollama model. Local costs nothing and
+keeps issue text on your machine, which matters for a private tracker.
+
+```bash
+# local (no API key)
+ollama pull nomic-embed-text
+# then in .env:
+#   EMBEDDING_PROVIDER=ollama
+#   EMBEDDING_MODEL=nomic-embed-text
+
+# hosted
+#   EMBEDDING_PROVIDER=openai
+#   OPENAI_API_KEY=sk-...
+```
+
+**Thresholds do not transfer between models.** Measured on real issue
+titles, `nomic-embed-text` scored a genuine duplicate pair at 0.639 and
+unrelated pairs around 0.41, so OpenAI's 0.82 cutoff would miss every
+duplicate it finds. Defaults are per provider (OpenAI 0.82, Ollama 0.62);
+calibrate for your repo with `scripts/dryrun.py --show-near-misses`.
+
+Vector width also differs (1536 for `text-embedding-3-small`, 768 for
+`nomic-embed-text`) and the schema is built from the configured model, so
+switching providers means re-embedding into a fresh database.
+
+A note on model choice: `qwen3-embedding` performed badly here, scoring an
+unrelated pair (0.547) above a genuinely related one (0.454). Qwen3
+embedding models expect a task-specific instruction prefix, and without it
+the output is unreliable for this kind of comparison.
 
 ## Sweeping a backlog
 
@@ -105,7 +137,8 @@ with `GITHUB_WEBHOOK_SECRET` set to the same secret.
 | `scripts/init_repo.py` | One-time embedding backfill |
 
 Storage is SQLite with [sqlite-vec](https://github.com/asg017/sqlite-vec) for
-vector search, so there's no external vector database to run.
+vector search, so there's no external vector database to run. With Ollama as
+the provider, the whole pipeline runs locally with no API keys.
 
 ## Tests
 
@@ -115,9 +148,9 @@ venv/bin/python -m pytest
 
 ## Status
 
-Verified by tests and against the live GitHub API. Two things are not yet
-exercised end-to-end: the OpenAI embedding calls, and the webhook service
-running against a real repo.
+Verified by tests, against the live GitHub API, and end-to-end with local
+Ollama embeddings. Not yet exercised: the OpenAI embedding path, and the
+webhook service running against a real repo.
 
 Known gaps:
 

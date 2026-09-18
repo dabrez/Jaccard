@@ -31,7 +31,7 @@ load_dotenv()
 from app.db import (  # noqa: E402
     init_db, upsert_issue, upsert_embedding, find_similar, get_conn,
 )
-from app.embeddings import embed_issue  # noqa: E402
+from app.embeddings import embed_issue, provider  # noqa: E402
 from app.github import fetch_issues  # noqa: E402
 from app.similarity import (  # noqa: E402
     SIMILARITY_THRESHOLD, distance_to_similarity, format_percent,
@@ -74,8 +74,11 @@ async def embed_all(repo: str, issues: list[dict], skip: set[int]):
         print("  Nothing new to embed.")
         return
 
-    est = _estimate_cost(todo)
-    print(f"  Embedding {len(todo)} issues (~${est:.4f} of OpenAI usage)")
+    if provider() == "ollama":
+        print(f"  Embedding {len(todo)} issues locally via Ollama (no cost)")
+    else:
+        print(f"  Embedding {len(todo)} issues "
+              f"(~${_estimate_cost(todo):.4f} of OpenAI usage)")
 
     for n, issue in enumerate(todo, 1):
         issue_id = upsert_issue(
@@ -215,7 +218,8 @@ if __name__ == "__main__":
     os.environ.setdefault("DB_PATH", "dryrun.db")
     print(f"Using DB: {os.environ['DB_PATH']}")
 
-    if not os.getenv("OPENAI_API_KEY"):
+    if os.getenv("EMBEDDING_PROVIDER", "openai") != "ollama" \
+            and not os.getenv("OPENAI_API_KEY"):
         print("\nOPENAI_API_KEY is not set. Add it to .env (see .env.example).")
         sys.exit(1)
     if not os.getenv("GITHUB_TOKEN"):

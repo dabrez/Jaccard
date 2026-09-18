@@ -4,6 +4,8 @@ import struct
 import os
 from pathlib import Path
 
+from app.embeddings import dimensions
+
 DB_PATH = os.getenv("DB_PATH", "jaccard.db")
 
 
@@ -47,12 +49,13 @@ def init_db():
             ON issues(repo, state);
     """)
 
-    # Create the vec table separately (sqlite-vec syntax)
-    conn.execute("""
+    # Vector width follows the configured embedding model, so the table is
+    # built per provider rather than fixed at OpenAI's 1536.
+    conn.execute(f"""
         CREATE VIRTUAL TABLE IF NOT EXISTS issue_embeddings
         USING vec0(
             issue_id INTEGER PRIMARY KEY,
-            embedding FLOAT[1536]
+            embedding FLOAT[{dimensions()}]
         )
     """)
     conn.commit()
