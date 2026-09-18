@@ -26,6 +26,25 @@ log = logging.getLogger(__name__)
 
 DUPLICATE_LABEL = "possible-duplicate"
 
+# Handlers run detached so the webhook can return promptly. Nothing awaits the
+# resulting task, so without this wrapper any exception is swallowed and the
+# failure is invisible. Keep a reference to each task as well, otherwise the
+# event loop may garbage-collect it mid-flight.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro, description: str):
+    async def _runner():
+        try:
+            await coro
+        except Exception:
+            log.exception(f"Background handler failed: {description}")
+
+    task = asyncio.create_task(_runner())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -60,16 +79,21 @@ async def webhook(
     repo = data["repository"]["full_name"]
 
     if x_github_event == "issues":
+        number = data["issue"]["number"]
         if action == "opened":
-            asyncio.create_task(_handle_issue_opened(repo, data["issue"]))
+            _spawn(_handle_issue_opened(repo, data["issue"]),
+                   f"issue opened {repo}#{number}")
         elif action == "closed":
-            asyncio.create_task(_handle_issue_closed(repo, data["issue"]))
+            _spawn(_handle_issue_closed(repo, data["issue"]),
+                   f"issue closed {repo}#{number}")
         elif action in ("edited", "reopened"):
-            asyncio.create_task(_handle_issue_upsert(repo, data["issue"]))
+            _spawn(_handle_issue_upsert(repo, data["issue"]),
+                   f"issue {action} {repo}#{number}")
 
     elif x_github_event == "issue_comment":
         if action == "created":
-            asyncio.create_task(_handle_comment(repo, data))
+            _spawn(_handle_comment(repo, data),
+                   f"comment on {repo}#{data['issue']['number']}")
 
     return {"received": True}
 

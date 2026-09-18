@@ -27,6 +27,9 @@ def init_db():
             body        TEXT,
             state       TEXT NOT NULL DEFAULT 'open',
             created_at  TEXT,
+            -- Unused until the GitHub App conversion; present so existing
+            -- embeddings don't need regenerating at that point.
+            installation_id INTEGER,
             UNIQUE(repo, issue_number)
         );
 
@@ -36,8 +39,12 @@ def init_db():
             canonical_number INTEGER NOT NULL,
             duplicate_number INTEGER NOT NULL,
             confirmed_at    TEXT,
+            installation_id INTEGER,
             UNIQUE(repo, canonical_number, duplicate_number)
         );
+
+        CREATE INDEX IF NOT EXISTS idx_issues_repo_state
+            ON issues(repo, state);
     """)
 
     # Create the vec table separately (sqlite-vec syntax)
@@ -81,35 +88,58 @@ def upsert_issue(repo: str, issue_number: int, title: str, body: str,
 
 
 def upsert_embedding(issue_id: int, embedding: list[float]):
+    # vec0 virtual tables don't support ON CONFLICT ("UPSERT not implemented
+    # for virtual table"), so replace the row explicitly.
     conn = get_conn()
+    conn.execute("DELETE FROM issue_embeddings WHERE issue_id = ?", (issue_id,))
     conn.execute("""
         INSERT INTO issue_embeddings (issue_id, embedding)
         VALUES (?, ?)
-        ON CONFLICT(issue_id) DO UPDATE SET embedding=excluded.embedding
     """, (issue_id, serialize_embedding(embedding)))
     conn.commit()
     conn.close()
+
+
+# vec0 applies the repo/state filters AFTER running KNN, so asking for exactly
+# top_k neighbours can come back short (or empty) once another repo's issues are
+# filtered out. No fixed over-fetch is safe: enough unrelated issues will always
+# crowd the window. Instead widen k until we have top_k survivors or we've
+# scanned everything stored.
+KNN_INITIAL_K = 50
+KNN_GROWTH = 4
 
 
 def find_similar(repo: str, embedding: list[float], top_k: int = 5,
                  exclude_issue_id: int | None = None) -> list[dict]:
     conn = get_conn()
     vec_bytes = serialize_embedding(embedding)
+    total = conn.execute("SELECT count(*) FROM issue_embeddings").fetchone()[0]
 
-    rows = conn.execute("""
-        SELECT
-            i.issue_number,
-            i.title,
-            i.state,
-            e.distance
-        FROM issue_embeddings e
-        JOIN issues i ON i.id = e.issue_id
-        WHERE i.repo = ?
-          AND i.state = 'open'
-          AND e.issue_id != ?
-        ORDER BY e.distance
-        LIMIT ?
-    """, (repo, exclude_issue_id or -1, top_k)).fetchall()
+    k = max(KNN_INITIAL_K, top_k)
+    rows: list = []
+    while True:
+        k = min(k, total) if total else k
+        rows = conn.execute("""
+            SELECT
+                i.issue_number,
+                i.title,
+                i.state,
+                e.distance
+            FROM issue_embeddings e
+            JOIN issues i ON i.id = e.issue_id
+            WHERE e.embedding MATCH ?
+              AND k = ?
+              AND i.repo = ?
+              AND i.state = 'open'
+              AND e.issue_id != ?
+            ORDER BY e.distance
+            LIMIT ?
+        """, (vec_bytes, k, repo, exclude_issue_id or -1, top_k)).fetchall()
+
+        # Enough survivors, or we've already searched every stored vector.
+        if len(rows) >= top_k or k >= total:
+            break
+        k *= KNN_GROWTH
 
     conn.close()
     return [dict(r) for r in rows]
