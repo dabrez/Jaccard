@@ -167,8 +167,46 @@ def get_canonical_for(repo: str, issue_number: int) -> int | None:
     return row["canonical_number"] if row else None
 
 
+def get_duplicate_chain(repo: str, canonical_number: int,
+                        open_only: bool = True) -> list[int]:
+    """
+    Return every issue that resolves to this canonical one, following chains.
+
+    Confirmations arrive one pair at a time, so #3 may be a duplicate of #2
+    while #2 is a duplicate of #1. Closing #1 should reach #3 too, which a
+    single-level lookup misses.
+
+    Maintainers can also confirm pairs in both directions, producing cycles.
+    The recursive CTE tracks visited numbers in a path string so a cycle
+    terminates instead of recursing forever.
+    """
+    conn = get_conn()
+    rows = conn.execute("""
+        WITH RECURSIVE chain(number, path) AS (
+            SELECT ?, ',' || ? || ','
+            UNION
+            SELECT p.duplicate_number,
+                   c.path || p.duplicate_number || ','
+            FROM duplicate_pairs p
+            JOIN chain c ON p.canonical_number = c.number
+            WHERE p.repo = ?
+              AND c.path NOT LIKE '%,' || p.duplicate_number || ',%'
+        )
+        SELECT DISTINCT c.number
+        FROM chain c
+        JOIN issues i
+          ON i.repo = ? AND i.issue_number = c.number
+        WHERE c.number != ?
+          AND (? = 1 OR i.state = 'open')
+        ORDER BY c.number
+    """, (canonical_number, canonical_number, repo, repo,
+          canonical_number, 0 if open_only else 1)).fetchall()
+    conn.close()
+    return [r["number"] for r in rows]
+
+
 def get_duplicates_of(repo: str, canonical_number: int) -> list[int]:
-    """Return all duplicate issue numbers for a canonical issue."""
+    """Direct duplicates only. Prefer get_duplicate_chain for cascades."""
     conn = get_conn()
     rows = conn.execute("""
         SELECT duplicate_number FROM duplicate_pairs

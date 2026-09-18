@@ -11,6 +11,7 @@ load_dotenv()
 from app.db import (
     init_db, upsert_issue, upsert_embedding, find_similar,
     save_duplicate_pair, get_canonical_for, get_duplicates_of,
+    get_duplicate_chain,
     mark_issue_closed,
 )
 from app.embeddings import embed_issue
@@ -161,19 +162,27 @@ async def _handle_issue_closed(repo: str, issue: dict):
     mark_issue_closed(repo, number)
     log.info(f"[{repo}] Issue #{number} closed")
 
-    # If this is a canonical issue, close all its confirmed duplicates too
-    duplicates = get_duplicates_of(repo, number)
-    if duplicates:
-        log.info(
-            f"[{repo}] Cascading close to duplicates: {duplicates}"
-        )
-        for dup_number in duplicates:
+    # Close everything that resolves to this issue, following confirmation
+    # chains. Only still-open duplicates are returned, so a duplicate closed
+    # earlier is not re-closed or commented on twice.
+    duplicates = get_duplicate_chain(repo, number, open_only=True)
+    if not duplicates:
+        return
+
+    log.info(f"[{repo}] Cascading close to duplicates: {duplicates}")
+    for dup_number in duplicates:
+        try:
             await post_comment(
                 repo, dup_number,
                 f"Closing as duplicate — canonical issue #{number} was closed."
             )
             await close_issue(repo, dup_number)
-            mark_issue_closed(repo, dup_number)
+        except Exception:
+            # One unreachable issue (deleted, transferred, permissions)
+            # shouldn't strand the rest of the chain.
+            log.exception(f"[{repo}] Failed to cascade close #{dup_number}")
+            continue
+        mark_issue_closed(repo, dup_number)
 
 
 async def _handle_comment(repo: str, data: dict):
