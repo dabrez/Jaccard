@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jaccard — GitHub Issue Search</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <span class="logo-icon">⬡</span>
+          <span class="logo-text">Jaccard</span>
+        </div>
+        <p class="tagline">GitHub Issue Search &amp; Grouping</p>
+      </div>
+
+      <form id="add-repo-form" class="add-repo-form">
+        <div class="input-row">
+          <input id="repo-owner" placeholder="owner" autocomplete="off" spellcheck="false">
+          <span class="slash">/</span>
+          <input id="repo-name" placeholder="repo" autocomplete="off" spellcheck="false">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" id="add-repo-btn">
+          Add Repository
+        </button>
+      </form>
+
+      <div class="repo-section-label">Tracked Repos</div>
+      <div id="repo-list">
+        <div class="empty-repos">No repos yet. Add one above.</div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <div class="tabs">
+        <button class="tab active" data-tab="search">
+          <span class="tab-icon">⌕</span> Search Issues
+        </button>
+        <button class="tab" data-tab="groups">
+          <span class="tab-icon">⬡</span> Issue Groups
+        </button>
+      </div>
+
+      <!-- Search view -->
+      <div id="view-search" class="view active">
+        <div class="view-intro">
+          <h2>Find existing issues</h2>
+          <p>Describe your problem in plain language — Jaccard similarity will surface the closest matches.</p>
+        </div>
+
+        <form id="search-form" class="search-form">
+          <div class="search-bar">
+            <input
+              id="search-input"
+              type="text"
+              placeholder="e.g. app crashes when clicking the login button"
+              autocomplete="off"
+            >
+            <button type="submit" class="btn btn-primary">Search</button>
+          </div>
+          <div class="filter-row">
+            <span class="filter-label">State:</span>
+            <label class="radio-label"><input type="radio" name="search-state" value="all" checked> All</label>
+            <label class="radio-label"><input type="radio" name="search-state" value="open"> Open</label>
+            <label class="radio-label"><input type="radio" name="search-state" value="closed"> Closed</label>
+          </div>
+        </form>
+
+        <div id="search-status" class="status-bar hidden"></div>
+        <div id="search-results"></div>
+      </div>
+
+      <!-- Groups view -->
+      <div id="view-groups" class="view">
+        <div class="view-intro">
+          <h2>Duplicate &amp; similar issue groups</h2>
+          <p>Issues are clustered by Jaccard similarity. Groups with multiple issues may be duplicates worth merging or closing.</p>
+        </div>
+
+        <div class="groups-controls">
+          <div class="threshold-control">
+            <label for="threshold-slider">
+              Similarity threshold: <strong id="threshold-value">0.20</strong>
+            </label>
+            <input
+              id="threshold-slider"
+              type="range"
+              min="0.05"
+              max="0.80"
+              step="0.05"
+              value="0.20"
+            >
+          </div>
+          <div class="filter-row">
+            <span class="filter-label">State:</span>
+            <label class="radio-label"><input type="radio" name="groups-state" value="open" checked> Open</label>
+            <label class="radio-label"><input type="radio" name="groups-state" value="all"> All</label>
+            <label class="radio-label"><input type="radio" name="groups-state" value="closed"> Closed</label>
+          </div>
+          <button id="load-groups-btn" class="btn btn-primary">Load Groups</button>
+        </div>
+
+        <div id="groups-status" class="status-bar hidden"></div>
+        <div id="groups-results"></div>
+      </div>
+    </main>
+
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

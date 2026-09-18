@@ -1,8 +1,11 @@
 .env
 *.db
 venv/
+.venv/
 __pycache__/
+*.py[cod]
 *.pyc
 .pytest_cache/
 dist/
 *.egg-info/
+.DS_Store

@@ -34,7 +34,27 @@ keeping: closing #89 should close #412. Surveying the field, existing tools
 either auto-close aggressively or only suggest and forget; a reviewed,
 persistent duplicate graph was the gap.
 
-## What it does
+## Two implementations
+
+The repo currently holds two approaches to the same problem, with no shared
+code between them.
+
+**Token similarity + web UI** (`main.py`, `similarity.py`, `static/`) — the
+implementation the project is named for. Computes Jaccard similarity over
+tokenized issue text: no embeddings, no API keys, no model. Exposes a REST
+API with a browser frontend for searching and grouping issues. Fast, free,
+and good at catching duplicates that reuse the same wording.
+
+**Semantic embeddings** (`app/`, `scripts/`) — embeds issues and compares
+them by vector distance, so it matches duplicates that share no vocabulary
+("connection pooling" against "pgbouncer"). Runs as a webhook service plus
+a backlog sweep tool. Needs either an OpenAI key or a local Ollama model.
+
+They are complementary rather than redundant, and unifying them is open
+work. Run `uvicorn main:app` for the search UI, `uvicorn app.main:app` for
+the webhook service.
+
+## What the embedding pipeline does
 
 **Backlog sweep** (`scripts/sweep.py`) — walks a repo's open issues, embeds
 them, and groups them into duplicate clusters. Duplicates are treated as
@@ -126,10 +146,15 @@ with `GITHUB_WEBHOOK_SECRET` set to the same secret.
 
 | Path | Purpose |
 | --- | --- |
+| `main.py` | Search API + web UI (token similarity) |
+| `similarity.py` | Jaccard token similarity |
+| `database.py` | SQLite store for the search API |
+| `github_client.py` | GitHub client for the search API |
+| `static/` | Web frontend |
 | `app/main.py` | Webhook handlers, cascade close |
 | `app/db.py` | SQLite schema, vector search, duplicate-chain resolution |
-| `app/embeddings.py` | OpenAI embedding calls |
-| `app/similarity.py` | Distance-to-similarity conversion, thresholding |
+| `app/embeddings.py` | Embedding providers (OpenAI, Ollama) |
+| `app/similarity.py` | Embedding distance-to-similarity, thresholding |
 | `app/github.py` | GitHub REST client |
 | `app/commands.py` | `/duplicate` and `/not-duplicate` parsing |
 | `scripts/sweep.py` | Backlog clustering |

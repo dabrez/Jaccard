@@ -1,7 +1,11 @@
 fastapi==0.135.3
-uvicorn==0.44.0
+uvicorn[standard]==0.44.0
+httpx==0.28.1
+python-dotenv==1.2.2
+
+# Embedding pipeline (webhook service + backlog sweep)
 openai==2.32.0
 sqlite-vec==0.1.9
-python-dotenv==1.2.2
-httpx==0.28.1
+
+# Tests
 pytest-asyncio==1.2.0
