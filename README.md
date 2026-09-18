@@ -144,6 +144,16 @@ venv/bin/uvicorn app.main:app --reload               # serve /webhook
 Point a repo webhook at `/webhook` for `issues` and `issue_comment` events,
 with `GITHUB_WEBHOOK_SECRET` set to the same secret.
 
+Signature verification fails closed: with no secret set, unsigned requests
+are rejected with a 401. For local development without a secret, set
+`ALLOW_UNSIGNED_WEBHOOKS=1` — never on a publicly reachable URL, since the
+service comments on and closes issues.
+
+The two implementations must use separate database files (`DB_PATH` and
+`SEARCH_DB_PATH`). They both define an `issues` table with different
+columns, so sharing one file corrupts whichever starts second; each now
+refuses to open the other's database.
+
 ## Layout
 
 | Path | Purpose |
@@ -176,15 +186,17 @@ venv/bin/python -m pytest
 ## Status
 
 Verified by tests (including in a clean virtualenv built only from
-`requirements.txt`), against the live GitHub API, and end-to-end with local
-Ollama embeddings. Not yet exercised: the webhook service running against a
-real repo.
+`requirements.txt`), against the live GitHub API, end-to-end with local
+Ollama embeddings, and by delivering a signed webhook to a running service
+and confirming the issue was embedded and stored. Not yet exercised:
+delivery from GitHub itself, which needs a public URL.
 
 Known gaps:
 
 - Single-tenant. Comments post as the owner of `GITHUB_TOKEN` rather than a
   bot, and each repo needs its own webhook configured by hand. A GitHub App
   conversion would fix both.
+- The two implementations still keep separate databases and share no code.
 - `/not-duplicate` acknowledges but does not suppress, so a dismissed pair
   can be flagged again.
 - `SIMILARITY_THRESHOLD` (0.62) is calibrated from a handful of pairs, not

@@ -18,8 +18,27 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
+def _assert_not_search_db(conn):
+    """
+    Refuse to run against the search API's database.
+
+    Both schemas define an `issues` table, so opening the wrong file is
+    silently accepted by CREATE TABLE IF NOT EXISTS and only fails later on
+    a column that isn't there.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='issues'"
+    ).fetchone()
+    if row and "repo_id" in (row["sql"] or ""):
+        raise RuntimeError(
+            f"{DB_PATH} holds the search API's schema (database.py), not the "
+            f"embedding pipeline's. Point DB_PATH at a different file."
+        )
+
+
 def init_db():
     conn = get_conn()
+    _assert_not_search_db(conn)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS issues (
             id          INTEGER PRIMARY KEY,

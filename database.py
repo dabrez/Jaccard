@@ -1,9 +1,15 @@
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path("jaccard.db")
+# Distinct from the embedding pipeline's database. Both used to default to
+# jaccard.db while defining incompatible `issues` tables (repo_id/number here,
+# repo/issue_number there). Because both create with IF NOT EXISTS, whichever
+# started second silently adopted the other's schema and then failed on insert
+# with "table issues has no column named repo_id".
+DB_PATH = Path(os.getenv("SEARCH_DB_PATH", "jaccard_search.db"))
 
 
 def get_conn() -> sqlite3.Connection:
@@ -12,8 +18,28 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
+def _assert_not_embedding_db(conn):
+    """
+    Refuse to run against the embedding pipeline's database.
+
+    Both schemas define an `issues` table, so opening the wrong file would
+    otherwise be silently accepted by CREATE TABLE IF NOT EXISTS and only
+    surface later as a missing-column error on insert.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='issues'"
+    ).fetchone()
+    if row and "repo_id" not in (row["sql"] or ""):
+        raise RuntimeError(
+            f"{DB_PATH} holds the embedding pipeline's schema, not the search "
+            f"API's. Point SEARCH_DB_PATH at a different file (default "
+            f"jaccard_search.db)."
+        )
+
+
 def init_db():
     with get_conn() as conn:
+        _assert_not_embedding_db(conn)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS repos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

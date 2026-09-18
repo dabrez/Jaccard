@@ -1,9 +1,13 @@
 import os
 import hmac
 import hashlib
+import logging
+
 import httpx
 
 GITHUB_API = "https://api.github.com"
+
+log = logging.getLogger(__name__)
 
 
 def _headers() -> dict:
@@ -16,10 +20,36 @@ def _headers() -> dict:
 
 
 def verify_webhook_signature(payload: bytes, signature: str) -> bool:
-    """Verify GitHub's X-Hub-Signature-256 header."""
+    """
+    Verify GitHub's X-Hub-Signature-256 header.
+
+    Fails closed. An unset GITHUB_WEBHOOK_SECRET used to return True, which
+    made the insecure path the default: .env ships the secret empty, so a
+    deployed service would act on any unsigned request that reached it, and
+    this bot comments on and closes issues.
+
+    Running without a secret now requires ALLOW_UNSIGNED_WEBHOOKS=1, so it
+    is a deliberate local-development choice rather than an accident.
+    """
     secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
     if not secret:
-        return True  # Skip verification in dev if secret not set
+        if os.getenv("ALLOW_UNSIGNED_WEBHOOKS", "").strip() == "1":
+            log.warning(
+                "GITHUB_WEBHOOK_SECRET is unset and ALLOW_UNSIGNED_WEBHOOKS=1: "
+                "accepting an unverified webhook. Never do this in production."
+            )
+            return True
+        log.error(
+            "Rejecting webhook: GITHUB_WEBHOOK_SECRET is not set. Set it to "
+            "the secret configured on the GitHub webhook, or set "
+            "ALLOW_UNSIGNED_WEBHOOKS=1 for local development."
+        )
+        return False
+
+    if not signature:
+        log.warning("Rejecting webhook: no X-Hub-Signature-256 header")
+        return False
+
     expected = "sha256=" + hmac.new(
         secret.encode(), payload, hashlib.sha256
     ).hexdigest()
