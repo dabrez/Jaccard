@@ -50,7 +50,7 @@ def init_db():
     """)
 
     # Vector width follows the configured embedding model, so the table is
-    # built per provider rather than fixed at OpenAI's 1536.
+    # built from the model rather than a fixed width.
     conn.execute(f"""
         CREATE VIRTUAL TABLE IF NOT EXISTS issue_embeddings
         USING vec0(

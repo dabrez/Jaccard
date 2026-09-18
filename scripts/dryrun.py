@@ -10,9 +10,9 @@ Usage:
   python scripts/dryrun.py owner/repo --limit 200
   python scripts/dryrun.py owner/repo --show-near-misses
 
-Reads OPENAI_API_KEY and GITHUB_TOKEN from .env. Writes embeddings to a
-scratch DB (default dryrun.db) so a repeat run against the same repo costs
-nothing extra; pass --fresh to re-embed from scratch.
+Reads GITHUB_TOKEN from .env. Embeddings come from a local Ollama server,
+so no API key is involved. Writes to a scratch DB (default dryrun.db) so a
+repeat run reuses stored vectors; pass --fresh to re-embed.
 
 Nothing in here posts comments, adds labels, or closes issues.
 """
@@ -31,16 +31,11 @@ load_dotenv()
 from app.db import (  # noqa: E402
     init_db, upsert_issue, upsert_embedding, find_similar, get_conn,
 )
-from app.embeddings import embed_issue, provider  # noqa: E402
+from app.embeddings import embed_issue, model_name  # noqa: E402
 from app.github import fetch_issues  # noqa: E402
 from app.similarity import (  # noqa: E402
     SIMILARITY_THRESHOLD, distance_to_similarity, format_percent,
 )
-
-# OpenAI's text-embedding-3-small, priced per 1M input tokens.
-COST_PER_1M_TOKENS = 0.02
-# Rough tokens-per-character for English prose; only used for a cost estimate.
-CHARS_PER_TOKEN = 4
 
 # Pairs below the threshold but above this are worth eyeballing: they show
 # whether the cutoff is sitting in a sensible place.
@@ -59,13 +54,6 @@ def _already_embedded(repo: str) -> set[int]:
     return {r["issue_number"] for r in rows}
 
 
-def _estimate_cost(issues: list[dict]) -> float:
-    chars = sum(
-        len(i["title"]) + len(i.get("body") or "") for i in issues
-    )
-    return (chars / CHARS_PER_TOKEN) / 1_000_000 * COST_PER_1M_TOKENS
-
-
 async def embed_all(repo: str, issues: list[dict], skip: set[int]):
     todo = [i for i in issues if i["number"] not in skip]
     if skip:
@@ -74,11 +62,7 @@ async def embed_all(repo: str, issues: list[dict], skip: set[int]):
         print("  Nothing new to embed.")
         return
 
-    if provider() == "ollama":
-        print(f"  Embedding {len(todo)} issues locally via Ollama (no cost)")
-    else:
-        print(f"  Embedding {len(todo)} issues "
-              f"(~${_estimate_cost(todo):.4f} of OpenAI usage)")
+    print(f"  Embedding {len(todo)} issues locally via {model_name()}")
 
     for n, issue in enumerate(todo, 1):
         issue_id = upsert_issue(
@@ -90,9 +74,7 @@ async def embed_all(repo: str, issues: list[dict], skip: set[int]):
         ))
         if n % 25 == 0 or n == len(todo):
             print(f"  [{n}/{len(todo)}]")
-        # text-embedding-3-small allows far more than this, but stay polite.
-        if n % 100 == 0:
-            time.sleep(1)
+
 
 
 def score_pairs(repo: str, issues: list[dict], show_near_misses: bool):
@@ -116,8 +98,7 @@ def score_pairs(repo: str, issues: list[dict], show_near_misses: bool):
         if issue_id is None:
             continue
 
-        # Re-embedding here would double the cost, so read the stored vector
-        # back out and query with that.
+        # Read the stored vector back rather than re-embedding.
         conn = get_conn()
         row = conn.execute(
             "SELECT embedding FROM issue_embeddings WHERE issue_id = ?",
@@ -218,10 +199,6 @@ if __name__ == "__main__":
     os.environ.setdefault("DB_PATH", "dryrun.db")
     print(f"Using DB: {os.environ['DB_PATH']}")
 
-    if os.getenv("EMBEDDING_PROVIDER", "openai") != "ollama" \
-            and not os.getenv("OPENAI_API_KEY"):
-        print("\nOPENAI_API_KEY is not set. Add it to .env (see .env.example).")
-        sys.exit(1)
     if not os.getenv("GITHUB_TOKEN"):
         print("\nGITHUB_TOKEN is not set. For public repos you can use:")
         print("  GITHUB_TOKEN=$(gh auth token) python scripts/dryrun.py ...")

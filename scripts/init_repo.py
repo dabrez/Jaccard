@@ -4,7 +4,8 @@ One-time script to embed all existing open issues for a repo.
 Usage:
   python scripts/init_repo.py owner/repo
 
-Reads OPENAI_API_KEY, GITHUB_TOKEN, and optionally DB_PATH from .env
+Reads GITHUB_TOKEN and optionally DB_PATH from .env.
+Embeddings come from a local Ollama server; no API key needed.
 """
 import asyncio
 import sys
@@ -42,10 +43,7 @@ async def main(repo: str):
 
         print(f"  [{i}/{len(issues)}] #{number}: {title[:60]}")
 
-        # Be polite to the OpenAI rate limiter — ~60 req/min on free tier
-        if i % 50 == 0:
-            print("  Pausing 60s for rate limits...")
-            time.sleep(60)
+
 
     print(f"\nDone. {len(issues)} issues embedded into {os.getenv('DB_PATH', 'jaccard.db')}")
 

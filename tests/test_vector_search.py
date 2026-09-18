@@ -20,8 +20,15 @@ def temp_db(monkeypatch, tmp_path):
 
 
 def _vec(*values) -> list[float]:
-    """Pad a few leading values out to the 1536 dims the schema expects."""
-    return list(values) + [0.0] * (1536 - len(values))
+    """
+    Pad a few leading values out to the configured model's width.
+
+    Derived rather than hardcoded: the schema is built from the embedding
+    model, so a fixed width here breaks whenever the model changes.
+    """
+    from app.embeddings import dimensions
+    width = dimensions()
+    return list(values) + [0.0] * (width - len(values))
 
 
 def _add(db, repo, number, title, embedding, state="open"):

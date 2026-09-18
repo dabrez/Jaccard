@@ -3,8 +3,8 @@ uvicorn[standard]==0.44.0
 httpx==0.28.1
 python-dotenv==1.2.2
 
-# Embedding pipeline (webhook service + backlog sweep)
-openai==2.32.0
+# Vector storage for the embedding pipeline. Embeddings themselves come from
+# a local Ollama server over HTTP, so no SDK is needed.
 sqlite-vec==0.1.9
 
 # Tests

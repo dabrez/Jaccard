@@ -6,20 +6,14 @@ import os
 
 # Thresholds are not portable between embedding models. Measured on real
 # issue titles, nomic-embed-text scored a genuine duplicate pair at 0.639
-# and unrelated pairs around 0.41, so OpenAI's cutoff would miss every
-# duplicate it finds. Defaults per provider, overridable per repo.
-_DEFAULT_THRESHOLDS = {
-    "openai": 0.82,
-    "ollama": 0.62,
-}
+# and unrelated pairs around 0.41, so 0.62 sits between the two. Switching
+# models means re-measuring; calibrate with scripts/dryrun.py.
+DEFAULT_THRESHOLD = 0.62
 
 
 def _threshold() -> float:
     override = os.getenv("SIMILARITY_THRESHOLD")
-    if override:
-        return float(override)
-    provider = os.getenv("EMBEDDING_PROVIDER", "openai").strip().lower()
-    return _DEFAULT_THRESHOLDS.get(provider, 0.82)
+    return float(override) if override else DEFAULT_THRESHOLD
 
 
 # Read at import for the module-level constant callers already use; the

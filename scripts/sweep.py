@@ -15,7 +15,8 @@ Usage:
   python scripts/sweep.py owner/repo --format markdown > report.md
   python scripts/sweep.py owner/repo --format csv > clusters.csv
 
-Reads OPENAI_API_KEY and GITHUB_TOKEN from .env.
+Reads GITHUB_TOKEN from .env. Embeddings come from a local Ollama
+server, so no API key is involved.
 """
 import argparse
 import asyncio
@@ -34,14 +35,11 @@ load_dotenv()
 from app.db import (  # noqa: E402
     init_db, upsert_issue, upsert_embedding, find_similar, get_conn,
 )
-from app.embeddings import embed_issue, provider  # noqa: E402
+from app.embeddings import embed_issue, model_name  # noqa: E402
 from app.github import fetch_issues  # noqa: E402
 from app.similarity import (  # noqa: E402
     SIMILARITY_THRESHOLD, distance_to_similarity, format_percent,
 )
-
-COST_PER_1M_TOKENS = 0.02
-CHARS_PER_TOKEN = 4
 
 # How many neighbours to consider per issue when building clusters. Clusters
 # grow by transitive merging, so this caps work per issue, not cluster size.
@@ -84,11 +82,6 @@ class _Clusters:
                 if len(members) > 1}
 
 
-def _estimate_cost(issues: list[dict]) -> float:
-    chars = sum(len(i["title"]) + len(i.get("body") or "") for i in issues)
-    return (chars / CHARS_PER_TOKEN) / 1_000_000 * COST_PER_1M_TOKENS
-
-
 def _stored_numbers(repo: str) -> set[int]:
     conn = get_conn()
     rows = conn.execute("""
@@ -111,11 +104,7 @@ def embed_backlog(repo: str, issues: list[dict], fresh: bool):
         print("  Nothing new to embed")
         return
 
-    if provider() == "ollama":
-        print(f"  Embedding {len(todo)} issues locally via Ollama (no cost)")
-    else:
-        print(f"  Embedding {len(todo)} issues "
-              f"(~${_estimate_cost(todo):.4f} of OpenAI usage)")
+    print(f"  Embedding {len(todo)} issues locally via {model_name()}")
     for n, issue in enumerate(todo, 1):
         issue_id = upsert_issue(
             repo, issue["number"], issue["title"], issue.get("body") or "",
@@ -290,10 +279,6 @@ if __name__ == "__main__":
     if args.format == "text":
         print(f"Using DB: {os.environ['DB_PATH']}")
 
-    if os.getenv("EMBEDDING_PROVIDER", "openai") != "ollama" \
-            and not os.getenv("OPENAI_API_KEY"):
-        print("OPENAI_API_KEY is not set. Add it to .env (see .env.example).")
-        sys.exit(1)
     if not os.getenv("GITHUB_TOKEN"):
         print("GITHUB_TOKEN is not set. Try:")
         print("  GITHUB_TOKEN=$(gh auth token) python scripts/sweep.py ...")
